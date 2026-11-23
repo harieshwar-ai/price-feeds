@@ -37,10 +37,23 @@ export interface ParsedCcProduct {
   brand: string;
   sku: string;
   mpn?: string;
+  upc?: string;
   priceCad: number | null;
   stockOnline: StockOnline;
   condition: OfferCondition;
   storeStock: StoreStockEntry[];
+}
+
+function extractUpc(html: string, product: Record<string, unknown> | null): string | undefined {
+  const fromLd =
+    (product?.gtin13 as string | undefined) ??
+    (product?.gtin as string | undefined);
+  if (fromLd) return fromLd.replace(/\D/g, "");
+  const upcean = html.match(/["']upcean["']\s*,\s*["'](\d{12,14})["']/i);
+  if (upcean) return upcean[1];
+  const pushUpc = html.match(/ccs_cc_args\.push\(\s*\[\s*["']upcean["']\s*,\s*["'](\d{12,14})["']/i);
+  if (pushUpc) return pushUpc[1];
+  return undefined;
 }
 
 export function parseCadPrice(raw: string): number | null {
@@ -210,6 +223,7 @@ export function parseCanadaComputersProductHtml(
     brand,
     sku,
     mpn: product?.mpn as string | undefined,
+    upc: extractUpc(html, product),
     priceCad,
     stockOnline,
     condition,

@@ -17,13 +17,14 @@ export interface GpuCanonicalKey {
 
 export interface NormalizeGpuResult {
   key: GpuCanonicalKey;
-  /** Stable string for grouping offers. */
+  /** Stable string for product identity (excludes condition and seller). */
   keyString: string;
   parsed: GpuCanonicalKey & {
-    condition: "new" | "open_box" | "refurb";
+    condition: "new" | "open_box" | "refurb" | "used";
     isSuper: boolean;
     isTi: boolean;
   };
+  /** Title-only confidence; identifiers are confirmed via {@link resolveProductIdentity}. */
   confidence: number;
 }
 
@@ -57,11 +58,16 @@ const CHIP_PATTERNS: { re: RegExp; chip: string }[] = [
   { re: /\bRTX\s*3060\b/i, chip: "rtx-3060" },
 ];
 
+/** Longer / more specific lines must precede shorter prefixes. */
 const MODEL_LINE_PATTERNS: { re: RegExp; line: string }[] = [
+  { re: /\bventus\s*3x\s*pz\b/i, line: "ventus-3x-pz" },
   { re: /\bventus\s*3x\b/i, line: "ventus-3x" },
   { re: /\bventus\s*2x\b/i, line: "ventus-2x" },
+  { re: /\bgaming\s*trio\b/i, line: "gaming-trio" },
   { re: /\bgaming\s*trinity\b/i, line: "gaming-trinity" },
   { re: /\btrinity\b/i, line: "trinity" },
+  { re: /\bamp\s*extreme\b/i, line: "amp-extreme" },
+  { re: /\bamp\b/i, line: "amp" },
   { re: /\bgaming\s*x\b/i, line: "gaming-x" },
   { re: /\bgaming\s*oc\b/i, line: "gaming-oc" },
   { re: /\bdual\s*oc\b/i, line: "dual-oc" },
@@ -74,7 +80,6 @@ const MODEL_LINE_PATTERNS: { re: RegExp; line: string }[] = [
   { re: /\brog\s*strix\b/i, line: "rog-strix" },
   { re: /\btuf\b/i, line: "tuf" },
   { re: /\bsuprim\b/i, line: "suprim" },
-  { re: /\bamp\b/i, line: "amp" },
 ];
 
 const VENDOR_FROM_BRAND: Record<string, string> = {
@@ -91,21 +96,65 @@ const VENDOR_FROM_BRAND: Record<string, string> = {
   gainward: "gainward",
 };
 
+/** Compact MPN strings without spaces (e.g. RTX5070TI16GMTO). */
+const COMPACT_CHIP_RE =
+  /RTX\s*(\d{4})(TI|SUPER)?\s*(\d{2,3})\s*G(?:B)?(?![A-Z0-9])/i;
+
+const COMPACT_CHIP_NOSPACE_RE =
+  /RTX(\d{4})(TI|SUPER)?(\d{2,3})G/i;
+
+export function parseCompactMpnFragment(mpn: string): {
+  chip: string | null;
+  vramGb: number | null;
+} {
+  const compact = mpn.replace(/\s+/g, "");
+  const m = compact.match(COMPACT_CHIP_NOSPACE_RE);
+  if (!m) return { chip: null, vramGb: null };
+  const series = m[1]!;
+  const variant = (m[2] ?? "").toLowerCase();
+  const vram = Number.parseInt(m[3]!, 10);
+  let slug = `rtx-${series}`;
+  if (variant === "ti") slug += "-ti";
+  else if (variant === "super") slug += "-super";
+  return {
+    chip: slug,
+    vramGb: Number.isFinite(vram) ? vram : null,
+  };
+}
+
 function matchChip(text: string): string | null {
   for (const { re, chip } of CHIP_PATTERNS) {
     if (re.test(text)) return chip;
+  }
+  const compact = text.match(COMPACT_CHIP_RE) ?? text.replace(/\s+/g, "").match(COMPACT_CHIP_NOSPACE_RE);
+  if (compact) {
+    const series = compact[1]!;
+    const variant = (compact[2] ?? "").toLowerCase();
+    let slug = `rtx-${series}`;
+    if (variant === "ti") slug += "-ti";
+    else if (variant === "super") slug += "-super";
+    return slug;
   }
   return null;
 }
 
 function parseVramGb(text: string): number | null {
-  const m =
-    text.match(/\b(\d{1,3})\s*(?:gb|g)\b(?![\s\S]*gddr)/i) ??
-    text.match(/\b(\d{1,3})g\s*gddr/i) ??
-    text.match(/\b(\d{1,2})gb\s*gddr/i);
-  if (!m) return null;
-  const n = Number.parseInt(m[1]!, 10);
-  return Number.isFinite(n) && n >= 4 && n <= 48 ? n : null;
+  const compact = parseCompactMpnFragment(text);
+  if (compact.vramGb != null) return compact.vramGb;
+
+  const patterns = [
+    /\b(\d{2,3})\s*(?:gb|g)\b/i,
+    /\b(\d{2,3})g\s*gddr/i,
+    /\b(\d{2,3})gb\s*gddr/i,
+    /\b(\d{1,2})\s*(?:gb|g)\b/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const n = Number.parseInt(m[1]!, 10);
+    if (Number.isFinite(n) && n >= 4 && n <= 128) return n;
+  }
+  return null;
 }
 
 function parseModelLine(text: string): string | null {
@@ -128,9 +177,13 @@ function parseVendor(text: string, brand?: string): string {
   return "unknown";
 }
 
-function conditionFromTitle(title: string, url?: string): "new" | "open_box" | "refurb" {
+export function conditionFromTitle(
+  title: string,
+  url?: string
+): "new" | "open_box" | "refurb" | "used" {
   if (detectOpenBox(title, url)) return "open_box";
   if (/\brefurb/i.test(title)) return "refurb";
+  if (/\bused\b/i.test(title)) return "used";
   return "new";
 }
 
@@ -153,19 +206,17 @@ export function normalizeGpu(
   const vendor = parseVendor(title, input.brand);
   const vramGb = parseVramGb(text);
   const modelLine = parseModelLine(text);
-  const oc = /\boc\b/i.test(text) || /\boverclock/i.test(text);
+  const oc = /\boc\b/i.test(text) || /\boverclock/i.test(text) || /mto\b/i.test(text);
   const isSuper = /\bsuper\b/i.test(text);
-  const isTi = /\bti\b/i.test(text);
+  const isTi = /\bti\b/i.test(text) || /5070TI/i.test(text.replace(/\s/g, ""));
   const condition = conditionFromTitle(title, input.url);
 
-  let confidence = 0.35;
-  if (input.upc) confidence += 0.35;
-  if (input.mpn) confidence += 0.25;
-  if (chip) confidence += 0.2;
+  let confidence = 0.25;
+  if (chip) confidence += 0.15;
   if (vramGb != null) confidence += 0.1;
   if (modelLine) confidence += 0.05;
   if (vendor !== "unknown") confidence += 0.05;
-  confidence = Math.min(1, confidence);
+  confidence = Math.min(0.65, confidence);
 
   const key: GpuCanonicalKey = {
     vendor,

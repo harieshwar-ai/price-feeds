@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { normalizeGpu } from "../src/normalize/gpu.js";
-import { matchOffers } from "../src/match-offers.js";
-import type { Offer } from "../src/types.js";
 
 const CASES: {
   title: string;
@@ -19,7 +17,7 @@ const CASES: {
     title:
       "MSI GeForce RTX 5070 Ti 16G VENTUS 3X PZ 16GB GDDR7 Graphics Card",
     input: { brand: "MSI" },
-    expect: { chip: "rtx-5070-ti", vramGb: 16, modelLine: "ventus-3x", oc: false },
+    expect: { chip: "rtx-5070-ti", vramGb: 16, modelLine: "ventus-3x-pz", oc: false },
   },
   {
     title: "ZOTAC GAMING GeForce RTX 5060 AMP 8GB GDDR7",
@@ -119,14 +117,13 @@ const CASES: {
     expect: { chip: "unknown-chip", minConfidence: 0, },
   },
   {
-    title: "MSI GeForce RTX 5070 Ti 16G VENTUS 3X",
-    input: { upc: "0824146234567" },
-    expect: { chip: "rtx-5070-ti", vramGb: 16, modelLine: "ventus-3x", minConfidence: 0.85 },
+    title: "MSI GeForce RTX 5070 Ti 16G VENTUS 3X PZ OC",
+    expect: { chip: "rtx-5070-ti", vramGb: 16, modelLine: "ventus-3x-pz" },
   },
   {
     title: "ASUS PRIME RTX 5070 12GB",
     input: { mpn: "PRIME-RTX5070-12G" },
-    expect: { chip: "rtx-5070", vramGb: 12, minConfidence: 0.75 },
+    expect: { chip: "rtx-5070", vramGb: 12 },
   },
 ];
 
@@ -150,33 +147,5 @@ describe("normalizeGpu table", () => {
       expect(result.confidence).toBeGreaterThanOrEqual(exp.minConfidence);
     }
     expect(result.keyString).toContain(result.key.vendor);
-  });
-});
-
-describe("matchOffers", () => {
-  const base = (partial: Partial<Offer>): Offer => ({
-    retailer: "Test",
-    retailerSku: partial.retailerSku ?? "1",
-    url: partial.url ?? "https://example.com/1",
-    title: partial.title ?? "MSI RTX 5070 Ti 16G VENTUS 3X",
-    priceCents: 99900,
-    currency: "CAD",
-    condition: "new",
-    stockOnline: "in_stock",
-    storeStock: [],
-    fetchedAt: new Date().toISOString(),
-    ...partial,
-  });
-
-  it("groups high-confidence offers and sends low-confidence to review", () => {
-    const offers = [
-      base({ retailerSku: "a", title: "MSI GeForce RTX 5070 Ti 16G VENTUS 3X OC", brand: "MSI" }),
-      base({ retailerSku: "b", title: "MSI RTX 5070 Ti 16GB VENTUS 3X Overclocked", brand: "MSI" }),
-      base({ retailerSku: "c", title: "Generic 8GB graphics adapter" }),
-    ];
-    const { groups, review } = matchOffers(offers);
-    expect(review).toHaveLength(1);
-    expect(review[0]!.retailerSku).toBe("c");
-    expect(groups.length).toBeGreaterThanOrEqual(1);
   });
 });

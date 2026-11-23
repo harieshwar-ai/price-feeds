@@ -9,23 +9,37 @@ const client = createClient();
 const adapter = client.getAdapter("canadacomputers");
 
 console.log("Smoke fetchListing:", url);
-const offer = await adapter.fetchListing(url);
+const result = await adapter.fetchListing(url);
+
+if (result.outcome !== "ok") {
+  console.log(JSON.stringify(result, null, 2));
+  console.log("Health:", adapter.getHealth());
+  process.exit(1);
+}
+
+const offer = result.data;
 const storesWithStock = offer.storeStock.filter((s) =>
   typeof s.qty === "number" ? s.qty > 0 : s.qty === "in_stock"
 );
 
-console.log(JSON.stringify(
-  {
-    title: offer.title,
-    sku: offer.retailerSku,
-    priceCents: offer.priceCents,
-    currency: offer.currency,
-    stockOnline: offer.stockOnline,
-    condition: offer.condition,
-    storesWithStock: storesWithStock.length,
-    storeStockSample: storesWithStock.slice(0, 5),
-    fetchedAt: offer.fetchedAt,
-  },
-  null,
-  2
-));
+console.log(
+  JSON.stringify(
+    {
+      outcome: result.outcome,
+      title: offer.title,
+      sku: offer.retailerSku,
+      mpn: offer.mpn,
+      upc: offer.upc,
+      priceCents: offer.priceCents,
+      currency: offer.currency,
+      stockOnline: offer.stockOnline,
+      condition: offer.condition,
+      storesWithStock: storesWithStock.length,
+      storeStockSample: storesWithStock.slice(0, 5),
+      fetchedAt: offer.fetchedAt,
+      health: adapter.getHealth(),
+    },
+    null,
+    2
+  )
+);

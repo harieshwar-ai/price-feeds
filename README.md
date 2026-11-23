@@ -20,9 +20,11 @@ const client = createClient({
 });
 
 const adapter = client.getAdapter("canadacomputers");
-const offer = await adapter.fetchListing(
+const result = await adapter.fetchListing(
   "https://www.canadacomputers.com/en/powered-by-nvidia/282429/msi-geforce-rtx-5070-ti-16g-ventus-3x-pz-16gb-gddr7-graphics-card-rtx-5070-ti-16g-ventus-3x-pz-oc.html"
 );
+if (result.outcome !== "ok") throw new Error(result.message);
+const offer = result.data;
 
 console.log(offer.priceCents / 100, offer.currency, offer.stockOnline);
 
@@ -42,8 +44,11 @@ import {
 
 Deno.serve(async () => {
   const adapter = createClient().getAdapter("canadacomputers");
-  const offer: Offer = await adapter.fetchListing("282429");
-  return Response.json(offer);
+  const result = await adapter.fetchListing("282429");
+  if (result.outcome !== "ok") {
+    return Response.json(result, { status: 502 });
+  }
+  return Response.json(result.data);
 });
 ```
 
@@ -54,16 +59,49 @@ Deno.serve(async () => {
 | `createClient(opts?)` | Injectable `fetch`, `userAgent`, `timeoutMs` (default 20s) |
 | `getAdapter(id)` | Returns a **cleared** adapter or **throws** |
 | `listSources()` / `sources.json` | Registry of allowed retailers |
-| `SourceAdapter.search(query)` | Search + fetch listings (rate-limited) |
-| `SourceAdapter.fetchListing(urlOrSku)` | Single product page → `Offer` |
-| `normalizeGpu(title, { brand?, mpn?, upc? })` | Canonical GPU key + confidence |
-| `matchOffers(offers)` | Group by key; low confidence → `review` |
+| `SourceAdapter.search(query)` | Search + fetch → `AdapterResult<Offer[]>` |
+| `SourceAdapter.fetchListing(urlOrSku)` | Single listing → `AdapterResult<Offer>` |
+| `SourceAdapter.getHealth()` | Per-run fetches, stop reason (`blocked` / `rate_limited`) |
+| `resolveProductIdentity()` | **UPC/MPN-first** product key (title-only → unconfirmed) |
+| `normalizeGpu()` | Title/MPN **proposals** for chip, VRAM, model line |
+| `matchOffers(offers)` | Group by product + **condition** + seller; title-only → `review` |
+| `computePriceEvents()` | Pure drop / restock / sellout helpers for observations |
 | `getFxRate('USD','CAD')` | Bank of Canada Valet API (cached, display only) |
 | `listCategories()` | Pluggable categories (`gpu` today) |
 
 ### `Offer`
 
-`retailer`, `retailerSku`, `url`, `title`, `brand?`, `mpn?`, `upc?`, `priceCents`, `currency`, `condition` (`new` \| `open_box` \| `refurb`), `stockOnline`, `storeStock[]`, `fetchedAt`.
+`retailer`, `retailerSku`, `url`, `title`, `brand?`, `mpn?`, `upc?`, `priceCents`, `currency`, `condition` (`new` \| `open_box` \| `refurb` \| `used`), `stockOnline`, `storeStock[]`, `fetchedAt`, `sellerType`, `fetchId`.
+
+### Adapter outcomes
+
+`fetchListing` / `search` return `{ outcome: 'ok' \| 'blocked' \| 'rate_limited' \| 'not_found' \| 'parse_error', … }`. On **blocked** or **rate_limited**, the adapter **stops further fetches for that run** (no challenge retries). One bounded retry is used only for transient **5xx** or **timeouts**.
+
+### Matching rules
+
+- Product identity = **MPN / UPC / alias table** (`src/product/aliases.ts`). Condition and seller are **outside** identity.
+- Title parsing alone lands in **`review`** until UPC/MPN confirms.
+- **New / open-box / refurb / used** never share a match group (condition is on each `Offer`, never merged into one price).
+- Marketplace offers **>50% below** the cheapest first-party **new** offer are flagged **`unconfirmedPrice`**.
+
+### Observations (tracker storage)
+
+This package defines append-only **`Observation`** rows and pure event helpers — **no Postgres client here**.
+
+Suggested tracker schema (America/Toronto for daily rollups):
+
+```text
+observations(id, listing_id, price_cents, currency, stock_online, store_id nullable,
+  seller_type, read_method, fetch_id, condition, observed_at timestamptz)
+```
+
+Ingest flow:
+
+1. `fetchListing` → `AdapterResult` → map to `Offer` + `Observation` (`offerRef`, `venue`, `readMethod: 'cleared_page'`).
+2. Insert observation; call `computePriceEvents(previous, current)` for alerts.
+3. Drops **>30%** set `needsConfirmation` until a second read agrees (`confirmPendingLargeMove`).
+4. Reads older than **72h** → `applyStalenessRule` (display as unknown / out of stock).
+5. Daily low price per card: `date_trunc('day', observed_at AT TIME ZONE 'America/Toronto')` over confirmed first-party **new** observations.
 
 ### Cleared sources
 

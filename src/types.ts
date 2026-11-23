@@ -1,3 +1,5 @@
+import type { AdapterResult, SourceHealthSummary } from "./adapter-result.js";
+
 export type Clearance = "official_api" | "affiliate_feed" | "cleared_page";
 
 export type SourceClearanceStatus =
@@ -5,7 +7,9 @@ export type SourceClearanceStatus =
   | "pending"
   | "disabled";
 
-export type OfferCondition = "new" | "open_box" | "refurb";
+export type OfferCondition = "new" | "open_box" | "refurb" | "used";
+
+export type SellerType = "first_party" | "marketplace" | "unknown";
 
 export type StockOnline = "in_stock" | "out_of_stock" | "unknown";
 
@@ -29,6 +33,11 @@ export interface Offer {
   stockOnline: StockOnline;
   storeStock: StoreStockEntry[];
   fetchedAt: string;
+  sellerType?: SellerType;
+  sourceId?: string;
+  fetchId?: string;
+  /** Set when a marketplace offer is >50% below the cheapest legit first-party offer. */
+  unconfirmedPrice?: boolean;
 }
 
 export interface RateLimit {
@@ -63,8 +72,12 @@ export interface SourceAdapter {
   readonly clearance: Clearance;
   readonly rateLimit: RateLimit;
 
-  search(query: string, opts?: SearchOptions): Promise<Offer[]>;
-  fetchListing(urlOrSku: string, opts?: FetchListingOptions): Promise<Offer>;
+  search(query: string, opts?: SearchOptions): Promise<AdapterResult<Offer[]>>;
+  fetchListing(
+    urlOrSku: string,
+    opts?: FetchListingOptions
+  ): Promise<AdapterResult<Offer>>;
+  getHealth(): SourceHealthSummary;
 }
 
 export interface SourceRecord {

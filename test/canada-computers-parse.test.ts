@@ -29,6 +29,8 @@ describe("parseCanadaComputersProductHtml (fixture)", () => {
       parsed!.stockOnline
     );
     expect(parsed!.condition).toBe("new");
+    expect(parsed!.mpn).toBeTruthy();
+    expect(parsed!.upc).toBe("824142448151");
     expect(parsed!.storeStock.length).toBeGreaterThan(0);
     expect(parsed!.storeStock[0]!.storeId).toMatch(/^cc-/);
   });
