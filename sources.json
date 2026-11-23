@@ -1,0 +1,64 @@
+{
+  "sources": [
+    {
+      "id": "canadacomputers",
+      "retailer": "Canada Computers",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "cleared",
+      "clearanceType": "cleared_page",
+      "clearedDate": "2025-11-01",
+      "notes": "Public product pages; behaviour ported from canada-gpu-tracker supabase/functions/_shared/parsers/canada-computers.ts."
+    },
+    {
+      "id": "memoryexpress",
+      "retailer": "Memory Express",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "disabled",
+      "clearanceType": "cleared_page",
+      "clearedDate": null,
+      "notes": "Not cleared for automated fetch; adapter disabled."
+    },
+    {
+      "id": "bestbuy-ca",
+      "retailer": "Best Buy Canada",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "pending",
+      "clearanceType": null,
+      "clearedDate": null,
+      "notes": "Adapter not implemented."
+    },
+    {
+      "id": "newegg-ca",
+      "retailer": "Newegg Canada",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "pending",
+      "clearanceType": null,
+      "clearedDate": null,
+      "notes": "Adapter not implemented."
+    },
+    {
+      "id": "amazon-ca",
+      "retailer": "Amazon Canada",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "pending",
+      "clearanceType": null,
+      "clearedDate": null,
+      "notes": "Adapter not implemented."
+    },
+    {
+      "id": "walmart-ca",
+      "retailer": "Walmart Canada",
+      "country": "CA",
+      "currency": "CAD",
+      "clearance": "pending",
+      "clearanceType": null,
+      "clearedDate": null,
+      "notes": "Adapter not implemented."
+    }
+  ]
+}
